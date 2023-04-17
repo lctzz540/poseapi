@@ -6,7 +6,7 @@ from pydantic import BaseModel
 input_shape = (500, 16)
 
 # Load the trained TensorFlow model
-model = tf.keras.models.load_model("my_model.h5")
+model = tf.keras.models.load_model("./best_model.h5.h5")
 
 # Define the FastAPI application
 app = FastAPI()
