@@ -1,46 +1,37 @@
+from fastapi import FastAPI, UploadFile
+import pandas as pd
+import numpy as np
 import tensorflow as tf
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
 
-# Define the input data shape for the model
-input_shape = (500, 16)
-
-# Load the trained TensorFlow model
-model = tf.keras.models.load_model("./best_model.h5")
-
-# Define the FastAPI application
 app = FastAPI()
 
-# Define the request payload as a Pydantic model
+# Load your model
+model = tf.keras.models.load_model("./best_model.h5")
 
 
-class PredictionRequest(BaseModel):
-    data: list[list[float]]
+@app.post("/predict")
+async def predict(file: UploadFile):
+    # Read the uploaded CSV file into a Pandas DataFrame
+    df = pd.read_csv(file.file)
 
+    X = []
+    no_of_timesteps = 500
+    dataset = df.iloc[:, 1:].values
+    n_sample = len(dataset)
 
-# Define the response payload as a Pydantic model
-class PredictionResponse(BaseModel):
-    class_name: str
-    confidence: float
+    for i in range(no_of_timesteps, n_sample):
+        X.append(dataset[i - no_of_timesteps: i, :])
 
+    predictions = model.predict(np.array(X))
+    label_list = []
 
-# Define the endpoint for making predictions
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
-    # Convert the input data to a NumPy array
-    x = tf.keras.preprocessing.sequence.pad_sequences(
-        request.data, maxlen=input_shape[0], dtype="float32", padding="post"
-    )
+    for i, prediction in enumerate(predictions):
+        predicted_label = np.argmax(prediction)
+        predicted_prob = prediction[predicted_label]
+        label_list.append((predicted_label, predicted_prob))
 
-    # Make a prediction with the model
-    prediction = model.predict(x)[0]
+    counts = np.bincount([label[0] for label in label_list])
+    predicted_class = np.argmax(counts)
 
-    # Get the predicted class and confidence score
-    predicted_class = tf.argmax(prediction).numpy()
-    confidence = prediction[predicted_class]
-
-    # Map the predicted class index to a class name (if applicable)
-    class_name = str(predicted_class)
-
-    # Return the prediction result
-    return PredictionResponse(class_name=class_name, confidence=confidence)
+    return JSONResponse(content={"predict": int(predicted_class)})
