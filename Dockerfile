@@ -12,6 +12,9 @@ COPY requirements.txt .
 RUN python -m pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt -v
 
+# Install additional packages for OpenCV
+RUN apt-get update && apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev
+
 # Copy the rest of the application code into the container at /app
 COPY . .
 

@@ -3,15 +3,15 @@ import requests
 # Set the API endpoint URL
 url = "http://localhost:8000/predict"
 
-# Open the CSV file and read its content
-with open("../Tree Pose_Right.csv", "rb") as f:
+# Open the video file and read its content
+with open("../Tree Pose_Right.mp4", "rb") as f:
     file_content = f.read()
 
 # Create the request payload with the file content
-files = {"file": ("test_data.csv", file_content)}
-print("test_data.csv", file_content)
-# Send the POST request to the API endpoint with the file upload
+files = {"file": ("test_data.mp4", file_content)}
+
+# Send a POST request to the API endpoint with the payload
 response = requests.post(url, files=files)
 
-# Print the response
+# Print the JSON response
 print(response.json())
