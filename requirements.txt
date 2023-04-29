@@ -6,3 +6,4 @@ tensorflow
 python-multipart
 opencv-python
 polars
+mediapipe
