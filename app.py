@@ -1,85 +1,108 @@
-from fastapi import FastAPI, UploadFile, File
-import numpy as np
-import tensorflow as tf
-from fastapi.responses import JSONResponse
 import cv2
-import polars as pl
+import numpy as np
 import mediapipe as mp
+import pandas as pd
+import streamlit as st
+import time
+import tensorflow as tf
 
-
-app = FastAPI()
-
-# Load your model
 model = tf.keras.models.load_model("./best_model.h5")
+mp_drawing = mp.solutions.drawing_utils
+mp_pose = mp.solutions.pose
 
-# Set up the Mediapipe Pose Estimator
-pose_estimator = mp.solutions.pose.Pose(
-    min_detection_confidence=0.5, min_tracking_confidence=0.5
-)
+cap = cv2.VideoCapture(0)
 
+st.set_page_config(layout="wide")
+col1, col2 = st.columns(2)
+with col1:
+    st.header("Pose Detection")
+    image_placeholder = st.empty()
+with col2:
+    st.header("Key Points")
+    keypoint_placeholder = st.empty()
 
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    # Read the uploaded video file into a cv2 VideoCapture object
-    video = cv2.VideoCapture(file.file)
+keypoints_list = []
+with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+    record_keypoints = False
+    record_button = st.button("Record")
 
-    frame_count = 0
-    df = None
+    if record_button:
+        for i in range(5, 0, -1):
+            st.write(i)
+            time.sleep(1)
+        record_keypoints = True
 
-    # Process each frame of the video
-    while True:
-        success, image = video.read()
-        if not success:
-            break
-
-        frame_count += 1
-
-        # Convert the image to RGB and run it through the pose estimator
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = pose_estimator.process(image)
-        if results.pose_landmarks is None:
+    start_time = time.time()
+    while time.time() - start_time < 30 and record_keypoints:
+        ret, frame = cap.read()
+        if not ret:
             continue
 
-        # Extract the pose keypoints and add them to a Polars Series
+        frame = cv2.flip(frame, 1)
+
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        results = pose.process(frame)
+
+        annotated_image = frame.copy()
+        mp_drawing.draw_landmarks(
+            annotated_image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS
+        )
+
+        image_placeholder.image(annotated_image, use_column_width=True)
+
         keypoints = []
-        for landmark in results.pose_landmarks.landmark:
-            keypoints.append(landmark.x)
-            keypoints.append(landmark.y)
-            keypoints.append(landmark.z)
-            keypoints.append(landmark.visibility)
+        for i, landmark in enumerate(results.pose_landmarks.landmark):
+            keypoints.extend(
+                [landmark.x, landmark.y, landmark.z, landmark.visibility])
 
-        keypoints = pl.Series("keypoints", keypoints)
-        new_column_name = f"keypoints_{frame_count}"
-        keypoints = keypoints.rename(new_column_name)
+        # Only store the first 300 keypoints
+        keypoints = keypoints[:1200]
 
-        # Add the keypoints Series to the DataFrame
-        if df is None:
-            df = keypoints.to_frame()
-        else:
-            df = df.hstack(keypoints.to_frame())
+        # Append the keypoints to the keypoints_list
+        keypoints_list.append(keypoints)
 
-    # Transpose the DataFrame and predict the class using your model
-    try:
-        df = df.transpose()
+        if cv2.waitKey(1) == 27:
+            break
+
+        if len(keypoints_list) > 0:
+            df = pd.DataFrame(keypoints_list)
+            df.columns = [f"keypoints_{i}" for i in range(df.shape[1])]
+            keypoint_placeholder.table(df)
+
+    if record_keypoints:
         X = []
-        no_of_timesteps = 500
+
+        no_of_timesteps = 50
+
         dataset = df.iloc[:, 1:].values
         n_sample = len(dataset)
-
         for i in range(no_of_timesteps, n_sample):
             X.append(dataset[i - no_of_timesteps: i, :])
 
         predictions = model.predict(np.array(X))
         label_list = []
-
         for i, prediction in enumerate(predictions):
             predicted_label = np.argmax(prediction)
             predicted_prob = prediction[predicted_label]
             label_list.append((predicted_label, predicted_prob))
 
         counts = np.bincount([label[0] for label in label_list])
+
         predicted_class = np.argmax(counts)
 
-        return JSONResponse(content={"predict": int(predicted_class)})
-    except:
-        return JSONResponse(content={"error": "Unable to predict class"})
+        predicted_probs = [
+            label[1] for label in label_list if label[0] == predicted_class
+        ]
+        confidence = np.mean(predicted_probs)
+
+        if confidence >= 0.7:
+            pose_label = {0: "Tree Pose", 1: "Warrior 1", 2: "Warrior 2"}.get(
+                predicted_class, "Unknown"
+            )
+            st.write("Predicted pose:", pose_label)
+            st.write("Confidence:", confidence)
+        else:
+            st.write("Incorrect")
+cap.release()
+cv2.destroyAllWindows()
