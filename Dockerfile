@@ -22,4 +22,4 @@ COPY . .
 EXPOSE 8000
 
 # Start the FastAPI application using uvicorn
-CMD ["streamlit", "run", "app.py", "0.0.0.0", "--port", "8000"]
+CMD ["streamlit", "run", "app.py"]
