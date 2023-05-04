@@ -4,7 +4,7 @@ numpy
 pandas
 tensorflow
 python-multipart
-opencv-python
+opencv-python-headless
 polars
 mediapipe
 streamlit
